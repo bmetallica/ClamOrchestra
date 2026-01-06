@@ -6,6 +6,8 @@
 
 **ClamOrchestra** ist ein webbasiertes Verwaltungstool zur zentralisierten Verwaltung von ClamAV auf mehreren Linux-Servern (Debian/Ubuntu). Mit ClamOrchestra können Sie ClamAV auf Remote-Servern installieren, Scans planen, Logs automatisch abrufen und sich bei Virenfunden per E-Mail benachrichtigen lassen.
 
+![CO Dashboard](https://github.com/bmetallica/ClamOrchestra/blob/main/co.png)
+
 ## 🎯 Features
 
 ### Kern-Funktionalität
