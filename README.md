@@ -78,7 +78,7 @@ EOF
 
 ```bash
 # Projekt klonen
-git clone https://github.com/yourusername/clamorchestra.git
+git clone https://github.com/bmetallica/ClamOrchestra.git
 cd clamorchestra
 
 # Abhängigkeiten installieren
