@@ -153,7 +153,7 @@ After=network.target postgresql.service
 [Service]
 Type=simple
 User=clamorchestra
-WorkingDirectory=/opt/clamorchestra
+WorkingDirectory=/opt/ClamOrchestra
 Environment="NODE_ENV=production"
 ExecStart=/usr/bin/node index.js
 Restart=always
