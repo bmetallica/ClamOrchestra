@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server - ClamOrchestra</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        body { background: linear-gradient(135deg, #f5f7fa 0%, #e9ecef 100%); font-family: 'Segoe UI', sans-serif; }
+        .sidebar { background: white; min-height: 100vh; box-shadow: 2px 0 10px rgba(0,0,0,0.1); padding: 30px 0; position: fixed; left: 0; top: 0; width: 250px; z-index: 1000; }
+        .sidebar-header { padding: 0 20px 30px; border-bottom: 2px solid #667eea; }
+        .sidebar-header h4 { color: #667eea; font-weight: 700; margin: 0; }
+        .sidebar-nav { padding: 0; margin-top: 20px; }
+        .sidebar-nav a { display: flex; align-items: center; padding: 12px 20px; color: #333; text-decoration: none; transition: all 0.3s; border-left: 3px solid transparent; }
+        .sidebar-nav a:hover { background: #f0f0f0; color: #667eea; border-left-color: #667eea; }
+        .sidebar-nav a.active { background: #667eea; color: white; border-left-color: #667eea; }
+        .sidebar-nav i { width: 20px; margin-right: 10px; }
+        .main-content { margin-left: 250px; padding: 30px; }
+        .navbar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); box-shadow: 0 4px 15px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 999; margin-left: 250px; }
+        .server-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 25px; }
+        .server-card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.08); transition: all 0.3s; border-top: 4px solid #667eea; }
+        .server-card:hover { transform: translateY(-8px); box-shadow: 0 8px 25px rgba(102, 126, 234, 0.15); }
+        .server-card.offline { border-top-color: #dc3545; }
+        .server-card-header { padding: 20px; border-bottom: 1px solid #eee; }
+        .server-card h5 { margin: 0 0 5px; font-weight: 700; color: #333; font-size: 1.2em; }
+        .server-card-body { padding: 20px; }
+        .server-card-body p { margin: 10px 0; color: #666; font-size: 0.95em; }
+        .server-card-footer { padding: 15px 20px; background: #f8f9fa; border-top: 1px solid #eee; display: flex; gap: 10px; }
+        .status-badge { display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 0.85em; font-weight: 600; }
+        .status-badge.online { background: #d4edda; color: #155724; }
+        .status-badge.offline { background: #f8d7da; color: #721c24; }
+        .btn-sm { padding: 6px 12px; font-size: 0.85em; }
+        .section { background: white; border-radius: 12px; padding: 25px; margin-bottom: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .section h2 { font-size: 1.5em; font-weight: 700; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #667eea; }
+    </style>
+</head>
+<body>
+    <!-- Sidebar Navigation -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h4>🦠 ClamOrchestra</h4>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/"><i class="bi bi-speedometer2"></i> Dashboard</a>
+            <a href="/servers" class="active"><i class="bi bi-server"></i> Server</a>
+            <a href="/scans"><i class="bi bi-shield-check"></i> Scans</a>
+            <a href="/alerts"><i class="bi bi-exclamation-circle"></i> Alerts</a>
+            <% if (user?.is_admin) { %>
+                <a href="/settings"><i class="bi bi-gear"></i> Einstellungen</a>
+            <% } %>
+            <hr style="margin: 20px 0;">
+            <a href="/logout" style="color: #dc3545;"><i class="bi bi-box-arrow-right"></i> Abmelden</a>
+        </nav>
+    </div>
+
+    <!-- Top Navigation Bar -->
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
+            <span class="navbar-text text-white">Server-Verwaltung</span>
+            <span class="navbar-text text-white ms-auto">
+                <i class="bi bi-person"></i> <%= user?.username %>
+            </span>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 style="margin: 0; color: #333;">🖥️ Server-Verwaltung</h1>
+            <button class="btn btn-primary btn-lg" data-bs-toggle="modal" data-bs-target="#addServerModal">
+                <i class="bi bi-plus-circle"></i> Neuen Server hinzufügen
+            </button>
+        </div>
+
+        <!-- Statistics -->
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="section">
+                    <h6 style="color: #667eea; margin: 0;">Gesamt Server</h6>
+                    <h2 id="totalServers" style="margin: 10px 0 0; color: #333;">0</h2>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="section">
+                    <h6 style="color: #28a745; margin: 0;">Online</h6>
+                    <h2 id="onlineServers" style="margin: 10px 0 0; color: #28a745;">0</h2>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="section">
+                    <h6 style="color: #dc3545; margin: 0;">Offline</h6>
+                    <h2 id="offlineServers" style="margin: 10px 0 0; color: #dc3545;">0</h2>
+                </div>
+            </div>
+        </div>
+
+        <!-- Server Grid -->
+        <div class="server-grid" id="serversContainer">
+            <div class="text-center py-5" style="grid-column: 1/-1;">
+                <span class="spinner-border"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Server Modal -->
+    <div class="modal fade" id="addServerModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">🖥️ Neuen Server hinzufügen</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addServerForm">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Name *</label>
+                                <input type="text" class="form-control" name="name" placeholder="z.B. Production-01" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Hostname *</label>
+                                <input type="text" class="form-control" name="hostname" placeholder="z.B. server01.example.com" required>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">IP-Adresse</label>
+                                <input type="text" class="form-control" name="ip_address" placeholder="192.168.1.10">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">SSH-Port</label>
+                                <input type="number" class="form-control" name="port" value="22">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">SSH-Benutzer</label>
+                                <input type="text" class="form-control" name="ssh_user" value="root">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Beschreibung</label>
+                            <textarea class="form-control" name="description" rows="3" placeholder="Optionale Notizen zu diesem Server"></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="button" class="btn btn-primary" onclick="addServer()">Hinzufügen</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        async function loadServers() {
+            try {
+                const res = await fetch('/api/servers');
+                const { servers } = await res.json();
+
+                let online = servers.filter(s => s.status === 'online').length;
+                let offline = servers.filter(s => s.status === 'offline').length;
+
+                document.getElementById('totalServers').textContent = servers.length;
+                document.getElementById('onlineServers').textContent = online;
+                document.getElementById('offlineServers').textContent = offline;
+
+                const container = document.getElementById('serversContainer');
+                if (servers.length === 0) {
+                    container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #999;"><p>Keine Server vorhanden. <a href="#" onclick="bootstrap.Modal.getOrCreateInstance(document.getElementById(\'addServerModal\')).show()">Klicken Sie hier, um einen Server hinzuzufügen →</a></p></div>';
+                    return;
+                }
+
+                container.innerHTML = servers.map(s => `
+                    <div class="server-card ${s.status === 'offline' ? 'offline' : ''}">
+                        <div class="server-card-header">
+                            <h5>${s.name}</h5>
+                            <span class="status-badge ${s.status === 'online' ? 'online' : 'offline'}">
+                                <i class="bi ${s.status === 'online' ? 'bi-check-circle' : 'bi-exclamation-circle'}"></i> 
+                                ${s.status === 'online' ? 'Online' : 'Offline'}
+                            </span>
+                        </div>
+                        <div class="server-card-body">
+                            <p><strong>Hostname:</strong><br><code>${s.hostname}</code></p>
+                            <p><strong>IP-Adresse:</strong><br><code>${s.ip_address || '-'}</code></p>
+                            <p><strong>SSH-Port:</strong><br><code>${s.port}</code></p>
+                            ${s.description ? `<p><strong>Beschreibung:</strong><br>${s.description}</p>` : ''}
+                            ${s.last_check ? `<p><small class="text-muted">Zuletzt geprüft: ${new Date(s.last_check).toLocaleString('de-DE')}</small></p>` : ''}
+                        </div>
+                        <div class="server-card-footer">
+                            <a href="/servers/${s.id}" class="btn btn-sm btn-primary flex-grow-1">
+                                <i class="bi bi-gear"></i> Details
+                            </a>
+                            <button class="btn btn-sm btn-danger" onclick="deleteServer(${s.id})">
+                                <i class="bi bi-trash"></i> Löschen
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Fehler:', error);
+            }
+        }
+
+        async function addServer() {
+            const form = document.getElementById('addServerForm');
+            const data = {
+                name: form.name.value,
+                hostname: form.hostname.value,
+                ip_address: form.ip_address.value || null,
+                port: parseInt(form.port.value) || 22,
+                ssh_user: form.ssh_user.value,
+                description: form.description.value
+            };
+
+            try {
+                const res = await fetch('/api/servers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await res.json();
+                if (!res.ok) {
+                    alert('Fehler: ' + (result.error || 'Unbekannter Fehler'));
+                    console.error('API Error:', result);
+                    return;
+                }
+                form.reset();
+                bootstrap.Modal.getInstance(document.getElementById('addServerModal')).hide();
+                loadServers();
+            } catch (error) {
+                alert('Fehler beim Hinzufügen des Servers: ' + error.message);
+                console.error('Error:', error);
+            }
+        }
+
+        async function deleteServer(id) {
+            if (confirm('Server wirklich löschen?')) {
+                try {
+                    await fetch(`/api/servers/${id}`, { method: 'DELETE' });
+                    loadServers();
+                } catch (error) {
+                    alert('Fehler beim Löschen');
+                }
+            }
+        }
+
+        loadServers();
+    </script>
+</body>
+</html>
