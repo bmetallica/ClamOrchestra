@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scans - ClamOrchestra</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        body { background: linear-gradient(135deg, #f5f7fa 0%, #e9ecef 100%); font-family: 'Segoe UI', sans-serif; }
+        .sidebar { background: white; min-height: 100vh; box-shadow: 2px 0 10px rgba(0,0,0,0.1); padding: 30px 0; position: fixed; left: 0; top: 0; width: 250px; z-index: 1000; }
+        .sidebar-header { padding: 0 20px 30px; border-bottom: 2px solid #667eea; }
+        .sidebar-header h4 { color: #667eea; font-weight: 700; margin: 0; }
+        .sidebar-nav { padding: 0; margin-top: 20px; }
+        .sidebar-nav a { display: flex; align-items: center; padding: 12px 20px; color: #333; text-decoration: none; transition: all 0.3s; border-left: 3px solid transparent; }
+        .sidebar-nav a:hover { background: #f0f0f0; color: #667eea; border-left-color: #667eea; }
+        .sidebar-nav a.active { background: #667eea; color: white; border-left-color: #667eea; }
+        .sidebar-nav i { width: 20px; margin-right: 10px; }
+        .main-content { margin-left: 250px; padding: 30px; }
+        .navbar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); box-shadow: 0 4px 15px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 999; margin-left: 250px; }
+        .section { background: white; border-radius: 12px; padding: 25px; margin-bottom: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .section h2 { font-size: 1.5em; font-weight: 700; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #667eea; display: flex; align-items: center; gap: 10px; }
+        .stat-card { background: white; border-radius: 12px; padding: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-top: 3px solid; transition: transform 0.3s; }
+        .stat-card:hover { transform: translateY(-5px); }
+        .stat-card.blue { border-top-color: #667eea; }
+        .stat-card.green { border-top-color: #48bb78; }
+        .stat-card.orange { border-top-color: #ed8936; }
+        .stat-card.red { border-top-color: #f56565; }
+        .stat-card h3 { font-size: 2em; font-weight: 700; margin: 10px 0; color: #333; }
+        .stat-card p { color: #666; margin: 0; }
+        .table { margin-bottom: 0; }
+        .table thead { background: #f8f9fa; }
+        .result-item { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 3px solid #667eea; }
+    </style>
+</head>
+<body>
+    <!-- Sidebar Navigation -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h4>🦠 ClamOrchestra</h4>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/"><i class="bi bi-speedometer2"></i> Dashboard</a>
+            <a href="/servers"><i class="bi bi-server"></i> Server</a>
+            <a href="/scans" class="active"><i class="bi bi-shield-check"></i> Scans</a>
+            <a href="/alerts"><i class="bi bi-exclamation-circle"></i> Alerts</a>
+            <% if (user?.is_admin) { %>
+                <a href="/settings"><i class="bi bi-gear"></i> Einstellungen</a>
+            <% } %>
+            <hr style="margin: 20px 0;">
+            <a href="/logout" style="color: #dc3545;"><i class="bi bi-box-arrow-right"></i> Abmelden</a>
+        </nav>
+    </div>
+
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
+            <span class="navbar-text text-white">Scan-Verwaltung</span>
+            <span class="navbar-text text-white ms-auto"><i class="bi bi-person"></i> <%= user?.username %></span>
+        </div>
+    </nav>
+
+    <div class="main-content">
+        <h1 class="mb-4" style="color: #333;">📊 Scan-Verwaltung</h1>
+
+        <!-- Statistics Cards -->
+        <div class="row mb-4">
+            <div class="col-md-6 col-lg-3 mb-3">
+                <div class="stat-card blue">
+                    <div style="font-size: 2em; color: #667eea;"><i class="bi bi-shield-check"></i></div>
+                    <h3 id="totalScans">0</h3>
+                    <p>Gesamt Scans</p>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-3 mb-3">
+                <div class="stat-card green">
+                    <div style="font-size: 2em; color: #48bb78;"><i class="bi bi-check-circle"></i></div>
+                    <h3 id="completedScans">0</h3>
+                    <p>Abgeschlossen</p>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-3 mb-3">
+                <div class="stat-card orange">
+                    <div style="font-size: 2em; color: #ed8936;"><i class="bi bi-hourglass"></i></div>
+                    <h3 id="runningScans">0</h3>
+                    <p>Aktiv</p>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-3 mb-3">
+                <div class="stat-card red">
+                    <div style="font-size: 2em; color: #f56565;"><i class="bi bi-exclamation-triangle"></i></div>
+                    <h3 id="totalThreats">0</h3>
+                    <p>Bedrohungen gefunden</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scan Results -->
+        <div class="section">
+            <h2><i class="bi bi-list-check"></i> Scan-Ergebnisse</h2>
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Server</th>
+                            <th>Status</th>
+                            <th>Dateien gescannt</th>
+                            <th>Bedrohungen</th>
+                            <th>Startzeit</th>
+                            <th>Endzeit</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scanResults">
+                        <tr><td colspan="6" class="text-center text-muted">Lädt...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Scan Jobs -->
+        <div class="section">
+            <h2><i class="bi bi-calendar-check"></i> Scan-Jobs</h2>
+            <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#addJobModal">
+                <i class="bi bi-plus-circle"></i> Neuer Scan-Job
+            </button>
+            <div id="scanJobsList"></div>
+        </div>
+    </div>
+
+    <!-- Add Scan Job Modal -->
+    <div class="modal fade" id="addJobModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">Neuer Scan-Job</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addJobForm">
+                        <div class="mb-3">
+                            <label class="form-label">Server *</label>
+                            <select class="form-control" id="jobServerSelect" name="server_id" required>
+                                <option value="">-- Server auswählen --</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Job-Name *</label>
+                            <input type="text" class="form-control" name="name" placeholder="z.B. Täglich Scan" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Scan-Typ *</label>
+                            <select class="form-control" name="scan_type" required>
+                                <option value="quick">Quick Scan</option>
+                                <option value="full">Full Scan</option>
+                                <option value="custom">Custom Scan</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Pfade (komma-getrennt) *</label>
+                            <input type="text" class="form-control" name="paths" value="/home,/var,/opt" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Cron-Ausdruck *</label>
+                            <input type="text" class="form-control" name="cron_expression" placeholder="0 2 * * *" required>
+                            <small class="text-muted">Format: Minute Stunde Tag Monat Wochentag</small>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="button" class="btn btn-primary" onclick="createScanJob()">Erstellen</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        async function loadScans() {
+            try {
+                // Load scan results
+                const res = await fetch('/api/scans').then(r => r.json());
+                
+                let completed = 0;
+                let running = 0;
+                let threats = 0;
+                
+                const tbody = document.getElementById('scanResults');
+                if (res.scans.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Keine Scan-Ergebnisse vorhanden</td></tr>';
+                } else {
+                    tbody.innerHTML = res.scans.slice(0, 50).map(s => {
+                        if (s.status === 'completed') completed++;
+                        if (s.status === 'running') running++;
+                        threats += s.threats_found || 0;
+                        
+                        return `
+                            <tr>
+                                <td><strong>${s.server_name}</strong></td>
+                                <td><span class="badge bg-${s.status === 'completed' ? 'success' : 'info'}">${s.status}</span></td>
+                                <td>${s.files_scanned || 0}</td>
+                                <td><strong class="text-danger">${s.threats_found || 0}</strong></td>
+                                <td>${new Date(s.start_time).toLocaleString('de-DE')}</td>
+                                <td>${s.end_time ? new Date(s.end_time).toLocaleString('de-DE') : '-'}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                }
+                
+                document.getElementById('totalScans').textContent = res.scans.length;
+                document.getElementById('completedScans').textContent = completed;
+                document.getElementById('runningScans').textContent = running;
+                document.getElementById('totalThreats').textContent = threats;
+                
+                // Load servers for dropdown
+                const servers = await fetch('/api/servers').then(r => r.json());
+                const select = document.getElementById('jobServerSelect');
+                select.innerHTML = '<option value="">-- Server auswählen --</option>';
+                servers.servers.forEach(s => {
+                    select.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+                });
+                
+                // Load scan jobs
+                const jobsRes = await fetch('/api/scans/jobs/all').then(r => r.json()).catch(() => ({ jobs: [] }));
+                const jobsList = document.getElementById('scanJobsList');
+                
+                if (!jobsRes.jobs || jobsRes.jobs.length === 0) {
+                    jobsList.innerHTML = '<p class="text-muted">Keine Scan-Jobs konfiguriert</p>';
+                } else {
+                    jobsList.innerHTML = jobsRes.jobs.map(j => `
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 3px solid #667eea;">
+                            <h6 style="margin: 0 0 8px; color: #333;"><strong>${j.name}</strong></h6>
+                            <p style="margin: 0; font-size: 0.9em; color: #666;">
+                                <strong>Server:</strong> ${j.server_name}<br>
+                                <strong>Typ:</strong> ${j.scan_type}<br>
+                                <strong>Cron:</strong> ${j.cron_expression}<br>
+                                <strong>Status:</strong> <span class="badge bg-${j.is_active ? 'success' : 'secondary'}">${j.is_active ? 'Aktiv' : 'Inaktiv'}</span>
+                            </p>
+                        </div>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('Fehler:', error);
+            }
+        }
+
+        async function createScanJob() {
+            const form = document.getElementById('addJobForm');
+            const data = new FormData(form);
+            const obj = {
+                server_id: parseInt(data.get('server_id')),
+                name: data.get('name'),
+                scan_type: data.get('scan_type'),
+                paths: data.get('paths').split(',').map(p => p.trim()),
+                cron_expression: data.get('cron_expression')
+            };
+            
+            try {
+                const res = await fetch('/api/scans/jobs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(obj)
+                });
+                if (res.ok) {
+                    form.reset();
+                    bootstrap.Modal.getInstance(document.getElementById('addJobModal')).hide();
+                    await loadScans();
+                } else {
+                    alert('Fehler beim Erstellen des Jobs');
+                }
+            } catch (error) {
+                alert('Fehler: ' + error.message);
+            }
+        }
+
+        loadScans();
+        setInterval(loadScans, 30000);
+    </script>
+</body>
+</html>
