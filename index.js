@@ -195,8 +195,15 @@ async function initDb() {
         clamd_enabled BOOLEAN DEFAULT TRUE,
         config_path VARCHAR(255) DEFAULT '/etc/clamav/clamd.conf',
         freshclam_config VARCHAR(255) DEFAULT '/etc/clamav/freshclam.conf',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+    `);
+
+    // Migration: Add updated_at column if missing
+    await client.query(`
+      ALTER TABLE clamav_configs 
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
     `);
 
     // Scan jobs table
@@ -552,10 +559,32 @@ async function fetchServerLogs(serverId) {
           `crontab -l 2>/dev/null || echo "No user cronjobs"`,
           `sudo cat /etc/cron.d/clamorchestra-scans 2>/dev/null || echo "No system cronjobs"`,
           `stat -c %y /var/lib/clamav/main.cvd 2>/dev/null || echo "Unknown"`,
-          `sudo find /var/log/clamav -name 'scan_*.log' -type f | sort -V | tail -3`
+          `sudo find /var/log/clamav -name 'scan_*.log' -type f | sort -V | tail -3`,
+          `which clamscan && clamscan --version 2>/dev/null | head -1 || echo "Not installed"`
         ];
         
         executeCommands(ssh, commands, async (results) => {
+          // Check if ClamAV is installed
+          const clamavCheckOutput = (results.command_7 || '').toString().trim();
+          const isClamavInstalled = clamavCheckOutput !== '' && !clamavCheckOutput.includes('Not installed');
+          
+          // Update clamav_configs with installation status
+          if (isClamavInstalled) {
+            const versionMatch = clamavCheckOutput.match(/ClamAV ([^\s/]+)/i);
+            const version = versionMatch ? versionMatch[1] : null;
+            await pool.query(
+              'INSERT INTO clamav_configs (server_id, is_installed, version, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (server_id) DO UPDATE SET is_installed = $2, version = $3, updated_at = NOW()',
+              [serverId, true, version]
+            ).catch(e => console.error('[LogFetcher] Error updating ClamAV status:', e.message));
+            console.log(`[LogFetcher] ClamAV is installed on server ${serverId} (version: ${version})`);
+          } else {
+            await pool.query(
+              'INSERT INTO clamav_configs (server_id, is_installed, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (server_id) DO UPDATE SET is_installed = $2, updated_at = NOW()',
+              [serverId, false]
+            ).catch(e => console.error('[LogFetcher] Error updating ClamAV status:', e.message));
+            console.log(`[LogFetcher] ClamAV is NOT installed on server ${serverId}`);
+          }
+          
           // Process scan files
           const scanFileList = (results.command_6 || '').toString().trim().split('\n').filter(f => f.trim());
           console.log(`[LogFetcher] Found ${scanFileList.length} scan files on server ${serverId}`);
@@ -697,31 +726,40 @@ async function fetchServerLogs(serverId) {
                       
                       console.log(`[LogFetcher] Processing scan #${scanIndex + 1}: Start=${startTime.toISOString()}, Files=${filesScanned}, Threats=${threatsFound}`);
                       
-                      // Try to insert scan - if it already exists (duplicate), it will be ignored
-                      // This is more reliable than checking first
-                      const scanRes = await pool.query(
-                        `INSERT INTO scan_results (server_id, start_time, end_time, status, files_scanned, threats_found, raw_output)
-                         VALUES ($1, $2, $3, $4, $5, $6, $7) 
-                         ON CONFLICT (server_id, start_time, end_time, files_scanned, threats_found) DO NOTHING
-                         RETURNING id`,
-                        [serverId, startTime, endTime, 'completed', filesScanned, threatsFound, scanContent]
-                      ).catch(e => {
-                        console.error('[LogFetcher] Insert scan error:', e.message);
-                        return { rows: [] };
-                      });
+                      // Check if scan already exists
+                      const existingRes = await pool.query(
+                        'SELECT id FROM scan_results WHERE server_id = $1 AND start_time = $2',
+                        [serverId, startTime]
+                      ).catch(() => ({ rows: [] }));
                       
-                      let isNewScan = scanRes && scanRes.rows.length > 0;
+                      let isNewScan = existingRes.rows.length === 0;
+                      let scanId = null;
                       
                       if (isNewScan) {
-                        console.log(`[LogFetcher] ✅ Saved NEW scan #${scanIndex + 1}: ${filesScanned} files, ${threatsFound} threats`);
+                        // Insert new scan
+                        const insertRes = await pool.query(
+                          `INSERT INTO scan_results (server_id, start_time, end_time, status, files_scanned, threats_found, raw_output)
+                           VALUES ($1, $2, $3, $4, $5, $6, $7) 
+                           RETURNING id`,
+                          [serverId, startTime, endTime, 'completed', filesScanned, threatsFound, scanContent]
+                        ).catch(e => {
+                          console.error('[LogFetcher] Insert scan error:', e.message);
+                          return { rows: [] };
+                        });
+                        
+                        if (insertRes.rows.length > 0) {
+                          scanId = insertRes.rows[0].id;
+                          console.log(`[LogFetcher] ✅ Saved NEW scan #${scanIndex + 1}: ${filesScanned} files, ${threatsFound} threats`);
+                        } else {
+                          console.log(`[LogFetcher] ⚠️  Could not insert scan #${scanIndex + 1}`);
+                        }
                       } else {
+                        scanId = existingRes.rows[0].id;
                         console.log(`[LogFetcher] ⏭️  Scan #${scanIndex + 1} already exists - skipping threats/alerts`);
                       }
                       
                       // Parse threats ONLY for NEW scans
-                      if (isNewScan) {
-                        const scanResultId = scanRes.rows[0].id;
-                        
+                      if (isNewScan && scanId) {
                         // Extract FOUND lines - only from the BEGINNING part (file listing) before SCAN SUMMARY
                         const summaryStartPos = scanContent.indexOf('----------- SCAN SUMMARY -----------');
                         const fileListingPart = scanContent.substring(0, summaryStartPos);
@@ -750,7 +788,7 @@ async function fetchServerLogs(serverId) {
                               const detRes = await pool.query(
                                 `INSERT INTO detections (scan_result_id, server_id, file_path, threat_name, severity)
                                  VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-                                [scanResultId, serverId, filePath, threatName, 'high']
+                                [scanId, serverId, filePath, threatName, 'high']
                               );
                               
                               if (detRes.rows.length > 0) {
@@ -1099,6 +1137,20 @@ app.get('/servers', requireAuth, (req, res) => {
 app.get('/api/servers', requireAuth, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM servers ORDER BY created_at DESC');
+    
+    // Ensure all servers have clamav_configs entries
+    for (const server of result.rows) {
+      await pool.query(
+        'INSERT INTO clamav_configs (server_id, is_installed) VALUES ($1, $2) ON CONFLICT (server_id) DO NOTHING',
+        [server.id, false]
+      ).catch(e => {
+        // Ignore constraint errors - entry might already exist
+        if (!e.message.includes('violates')) {
+          console.warn(`[API] Warning: Could not ensure clamav_configs for server ${server.id}:`, e.message);
+        }
+      });
+    }
+    
     res.json({ servers: result.rows });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1115,6 +1167,12 @@ app.post('/api/servers', requireAuth, async (req, res) => {
     );
     
     const serverId = result.rows[0].id;
+    
+    // Create initial ClamAV config entry
+    await pool.query(
+      'INSERT INTO clamav_configs (server_id, is_installed) VALUES ($1, $2)',
+      [serverId, false]
+    ).catch(e => console.error('Error creating clamav_config:', e.message));
     
     // Automatisch LogFetcher-Einstellungen erstellen
     await pool.query(
