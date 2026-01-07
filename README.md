@@ -79,7 +79,7 @@ EOF
 ```bash
 # Projekt klonen
 git clone https://github.com/bmetallica/ClamOrchestra.git
-cd clamorchestra
+cd ClamorOhestra
 
 # Abhängigkeiten installieren
 npm install
