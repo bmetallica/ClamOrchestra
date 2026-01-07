@@ -544,15 +544,28 @@
                     return;
                 }
                 
-                list.innerHTML = serverDetections.slice(0, 10).map(d => `
-                    <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 3px solid #ffc107;">
-                        <h6 style="margin: 0 0 8px; color: #856404;"><strong>${d.threat_name}</strong></h6>
-                        <p style="margin: 0; font-size: 0.9em; color: #856404;">
-                            <strong>Pfad:</strong> ${d.file_path}<br>
-                            <strong>Erkannt am:</strong> ${new Date(d.created_at).toLocaleString('de-DE')}
-                        </p>
-                    </div>
-                `).join('');
+                list.innerHTML = serverDetections.slice(0, 10).map(d => {
+                    const isResolved = d.resolved_at !== null && d.resolved_at !== undefined;
+                    const bgColor = isResolved ? '#d4edda' : '#fff3cd';
+                    const borderColor = isResolved ? '#28a745' : '#ffc107';
+                    const textColor = isResolved ? '#155724' : '#856404';
+                    const statusIcon = isResolved ? '✅' : '⚠️';
+                    const statusText = isResolved ? 'Behoben' : 'Aktiv';
+                    const resolvedDate = isResolved ? `<br><strong>Behoben am:</strong> ${new Date(d.resolved_at).toLocaleString('de-DE')}` : '';
+                    
+                    return `
+                        <div style="background: ${bgColor}; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 3px solid ${borderColor};">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <h6 style="margin: 0; color: ${textColor};"><strong>${statusIcon} ${d.threat_name}</strong></h6>
+                                <span style="background: ${borderColor}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 0.75em; font-weight: bold;">${statusText}</span>
+                            </div>
+                            <p style="margin: 0; font-size: 0.9em; color: ${textColor};">
+                                <strong>Pfad:</strong> ${d.file_path}<br>
+                                <strong>Erkannt am:</strong> ${new Date(d.created_at).toLocaleString('de-DE')}${resolvedDate}
+                            </p>
+                        </div>
+                    `;
+                }).join('');
             } catch (error) {
                 console.error('Fehler:', error);
             }
@@ -811,8 +824,9 @@
                         alert('✅ ' + result.message);
                     }
                     console.log('Log fetch initiated:', result);
-                    // Reload scan jobs after fetching
+                    // Reload scan jobs and ClamAV status after fetching
                     await loadScanJobs();
+                    await loadClamavStatus();
                 } else {
                     if (showMessage) {
                         alert('❌ Fehler: ' + result.error);
