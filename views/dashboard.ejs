@@ -120,9 +120,14 @@
                 <p>Online</p>
             </div>
             <div class="stat-card danger">
-                <div class="stat-icon">⚠️</div>
-                <h3 class="value" id="threatCount">0</h3>
-                <p>Bedrohungen</p>
+                <div class="stat-icon">🚨</div>
+                <h3 class="value" id="activeThreats">0</h3>
+                <p>Aktive Bedrohungen</p>
+            </div>
+            <div class="stat-card info">
+                <div class="stat-icon">✔️</div>
+                <h3 class="value" id="resolvedThreats">0</h3>
+                <p>Behobene Bedrohungen</p>
             </div>
             <div class="stat-card warning">
                 <div class="stat-icon">📋</div>
@@ -238,7 +243,8 @@
                 const summary = await fetch('/api/dashboard/summary').then(r => r.json());
                 document.getElementById('serverCount').textContent = summary.total_servers;
                 document.getElementById('onlineCount').textContent = summary.online_servers;
-                document.getElementById('threatCount').textContent = summary.total_detections;
+                document.getElementById('activeThreats').textContent = summary.active_detections;
+                document.getElementById('resolvedThreats').textContent = summary.resolved_detections;
                 document.getElementById('scanCount').textContent = summary.total_scans;
 
                 // Load servers
@@ -299,7 +305,7 @@
                 }
 
                 // Load recent detections
-                const detections = await fetch('/api/detections').then(r => r.json());
+                const detections = await fetch('/api/dashboard/recent-detections').then(r => r.json());
                 const detectDiv = document.getElementById('recentDetections');
                 if (!detections.detections || detections.detections.length === 0) {
                     detectDiv.innerHTML = '<div class="text-center py-5"><p class="text-success"><i class="bi bi-check-circle"></i> Keine Bedrohungen gefunden</p></div>';
@@ -310,17 +316,28 @@
                         const filePath = d.file_path || 'Unbekannt';
                         const fileName = filePath.split('/').pop() || filePath;
                         
+                        // Check if detection is resolved
+                        const isResolved = d.resolved_at !== null && d.resolved_at !== undefined;
+                        const statusColor = isResolved ? '#198754' : '#721c24'; // Green if resolved, red if not
+                        const statusIcon = isResolved ? '✅' : '🚨';
+                        const statusLabel = isResolved ? 'Bedrohung behoben' : '';
+                        const resolvedTime = isResolved ? new Date(d.resolved_at).toLocaleString('de-DE', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+                        
                         return `
                             <div class="detection-item">
                                 <div style="display: flex; justify-content: space-between; align-items: start; gap: 10px;">
                                     <div style="flex: 1;">
-                                        <strong style="color: #721c24;">🚨 ${d.threat_name}</strong>
+                                        <strong style="color: ${statusColor};">${statusIcon} ${d.threat_name}</strong>
+                                        ${isResolved ? `<span style="background: #198754; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75em; font-weight: bold;">✅ ${statusLabel}</span>` : ''}
                                         <div style="margin: 5px 0; font-size: 0.9em;">
                                             <div><strong>Server:</strong> ${d.server_name}</div>
                                             <div><strong>Datei:</strong> <code style="background: #eee; padding: 2px 4px; border-radius: 3px;">${fileName}</code></div>
                                             <div style="word-break: break-all; color: #666; font-size: 0.85em;">${filePath}</div>
                                         </div>
-                                        <small class="text-muted" style="display: block; margin-top: 5px;">⏰ ${timeStr}</small>
+                                        <div style="display: flex; gap: 10px; margin-top: 5px; font-size: 0.75em;">
+                                            <small class="text-muted">⏰ Erkannt: ${timeStr}</small>
+                                            ${isResolved ? `<small class="text-success">✅ Behoben: ${resolvedTime}</small>` : ''}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
