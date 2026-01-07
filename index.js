@@ -165,6 +165,12 @@ async function initDb() {
       ADD COLUMN IF NOT EXISTS ssh_user VARCHAR(255) DEFAULT 'root';
     `);
 
+    // Add signature_updated_at column if it doesn't exist
+    await client.query(`
+      ALTER TABLE servers 
+      ADD COLUMN IF NOT EXISTS signature_updated_at TIMESTAMP;
+    `);
+
     // SSH Keys table
     await client.query(`
       CREATE TABLE IF NOT EXISTS ssh_keys (
