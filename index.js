@@ -246,7 +246,8 @@ async function initDb() {
         file_path TEXT,
         threat_name VARCHAR(255),
         severity VARCHAR(50) DEFAULT 'medium',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        resolved_at TIMESTAMP DEFAULT NULL
       );
     `);
 
@@ -334,6 +335,9 @@ async function initDb() {
     } catch (e) {
       // Column might already exist, that's fine
     }
+
+    // Add resolved_at column to detections table if it doesn't exist
+    await client.query(`ALTER TABLE detections ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP DEFAULT NULL`);
 
     // Create default admin user if not exists
     const adminCheck = await client.query('SELECT id FROM users WHERE username = $1', ['admin']);
@@ -860,6 +864,63 @@ async function fetchServerLogs(serverId) {
           console.log(`[LogFetcher] Waiting for ${scanPromises.length} scan files to be processed...`);
           await Promise.all(scanPromises);
           console.log(`[LogFetcher] All scan files processed`);
+          
+          // Check if any previous unresolved detections have been fixed
+          try {
+            // Get the latest scan for this server (just completed)
+            const latestScan = await pool.query(
+              `SELECT sr.id, sr.start_time FROM scan_results sr 
+               WHERE sr.server_id = $1 
+               ORDER BY sr.start_time DESC LIMIT 1`,
+              [serverId]
+            );
+            
+            if (latestScan.rows.length > 0) {
+              const latestScanStartTime = new Date(latestScan.rows[0].start_time);
+              
+              // Get all unresolved detections for this server that are older than the latest scan
+              const unresolvedDetections = await pool.query(
+                `SELECT id, file_path, threat_name FROM detections 
+                 WHERE server_id = $1 
+                 AND resolved_at IS NULL 
+                 AND created_at < $2
+                 ORDER BY id DESC`,
+                [serverId, latestScanStartTime]
+              );
+              
+              if (unresolvedDetections.rows.length > 0) {
+                console.log(`[LogFetcher] Checking ${unresolvedDetections.rows.length} unresolved detections older than latest scan...`);
+                
+                for (const detection of unresolvedDetections.rows) {
+                  // Check if this file_path + threat_name combo exists in the latest scan or any scan AFTER it
+                  const stillFoundAfter = await pool.query(
+                    `SELECT COUNT(*) as count FROM detections d
+                     JOIN scan_results sr ON d.scan_result_id = sr.id
+                     WHERE d.server_id = $1 
+                     AND d.file_path = $2 
+                     AND d.threat_name = $3
+                     AND sr.start_time >= $4`,
+                    [serverId, detection.file_path, detection.threat_name, latestScanStartTime]
+                  );
+                  
+                  const count = parseInt(stillFoundAfter.rows[0].count);
+                  
+                  // If it wasn't found in any recent scan, mark as resolved
+                  if (count === 0) {
+                    await pool.query(
+                      `UPDATE detections 
+                       SET resolved_at = NOW() 
+                       WHERE id = $1`,
+                      [detection.id]
+                    );
+                    console.log(`[LogFetcher] ✅ Marked as resolved: ${detection.threat_name} in ${detection.file_path}`);
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            console.error('[LogFetcher] Error checking resolved detections:', e.message);
+          }
           
           // Now process cronjobs and other data
           const cronOutput = (results.command_4 || '').toString();
@@ -1941,12 +2002,16 @@ app.get('/api/dashboard/summary', requireAuth, async (req, res) => {
     const servers = await pool.query('SELECT COUNT(*) as count FROM servers');
     const scans = await pool.query('SELECT COUNT(*) as count FROM scan_results');
     const detections = await pool.query('SELECT COUNT(*) as count FROM detections');
+    const activeDetections = await pool.query('SELECT COUNT(*) as count FROM detections WHERE resolved_at IS NULL');
+    const resolvedDetections = await pool.query('SELECT COUNT(*) as count FROM detections WHERE resolved_at IS NOT NULL');
     const online = await pool.query('SELECT COUNT(*) as count FROM servers WHERE status = $1', ['online']);
     
     res.json({
       total_servers: parseInt(servers.rows[0].count),
       total_scans: parseInt(scans.rows[0].count),
       total_detections: parseInt(detections.rows[0].count),
+      active_detections: parseInt(activeDetections.rows[0].count),
+      resolved_detections: parseInt(resolvedDetections.rows[0].count),
       online_servers: parseInt(online.rows[0].count)
     });
   } catch (error) {
